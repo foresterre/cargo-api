@@ -1,0 +1,11 @@
+[package]
+name = "cargo-api"
+version = "0.0.0"
+authors = ["Martijn Gribnau <garm@ilumeo.com>"]
+description = "Elegant Rust API which wraps the cargo HTTP API"
+edition = "2018"
+license = "MIT OR Apache-2.0"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
