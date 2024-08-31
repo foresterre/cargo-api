@@ -1,11 +1,21 @@
+use cargo_api::api::crates::Crate;
+use cargo_api::api::{Json, Query};
 use cargo_api::client::ReqwestClient;
-use clap::Parser;
+use clap::{Args, Parser};
+use std::borrow::Cow;
 
 fn main() -> anyhow::Result<()> {
     let CargoCli::Api(args) = CargoCli::parse();
-    println!("{:?}", args.user_agent);
 
-    let _client = ReqwestClient::new(args.user_agent.as_str());
+    let client = ReqwestClient::new(args.user_agent.as_str());
+
+    match args.subcommand {
+        Subcommand::Crate(opts) => {
+            let endpoint = Json::new(Crate::new(Cow::Borrowed(opts.name.as_str())));
+            let value = endpoint.query(&client)?;
+            println!("{}", value);
+        }
+    }
 
     Ok(())
 }
@@ -35,4 +45,20 @@ struct ApiArgs {
 
     #[arg(long)]
     user_agent: String,
+
+    #[command(subcommand)]
+    subcommand: Subcommand,
+}
+
+#[derive(clap::Subcommand)]
+#[command(propagate_version = true)]
+pub enum Subcommand {
+    Crate(CrateOpts),
+}
+
+#[derive(Debug, Args)]
+#[command(next_help_heading = "Crate options")]
+pub struct CrateOpts {
+    #[arg(value_name = "name")]
+    name: String,
 }

@@ -1,4 +1,4 @@
-mod crates;
+pub mod crates;
 
 use bytes::Bytes;
 use http::StatusCode;
@@ -190,5 +190,25 @@ where
 
         // -- parse type
         serde_json::from_slice::<T>(response.body()).map_err(ApiError::parse_type_error::<T>)
+    }
+}
+
+pub struct Json<E> {
+    endpoint: E,
+}
+
+impl<E> Json<E> {
+    pub fn new(endpoint: E) -> Self {
+        Self { endpoint }
+    }
+}
+
+impl<E, C> Query<serde_json::Value, C> for Json<E>
+where
+    E: Endpoint,
+    C: Client,
+{
+    fn query(&self, client: &C) -> Result<serde_json::Value, ApiError<C::Error>> {
+        self.endpoint.query(client)
     }
 }

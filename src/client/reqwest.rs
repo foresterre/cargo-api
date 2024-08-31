@@ -6,7 +6,7 @@ use reqwest::ResponseBuilderExt;
 use std::borrow::Cow;
 use url::Url;
 
-const CRATES_API: &'static str = "https://crates.io/api";
+const CRATES_API: &'static str = "https://crates.io/api/";
 
 pub struct ReqwestClient {
     client: reqwest::blocking::Client,
