@@ -1,11 +1,27 @@
 [package]
 name = "cargo-api"
-version = "0.0.0"
+version = "0.1.0"
 authors = ["Martijn Gribnau <garm@ilumeo.com>"]
 description = "Elegant Rust API which wraps the cargo HTTP API"
-edition = "2018"
+edition = "2021"
 license = "MIT OR Apache-2.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+# bin
+anyhow = "1.0.86"
+clap = "4.5.16"
+clap-cargo = "0.14.1"
+storyteller = "1"
+reqwest = { version = "0.12.7", features = ["blocking"] }
+
+# lib
+thiserror = "1.0.63"
+serde = { version = "1.0.209", features = ["derive"] }
+serde_json = "1.0.127"
+http = "1"
+url = "2"
+semver = "1"
+jiff = { version = "0.1.11", features = ["serde"] }
+bytes = "1"
