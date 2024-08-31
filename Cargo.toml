@@ -1,6 +1,6 @@
 [package]
 name = "cargo-api"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Martijn Gribnau <garm@ilumeo.com>"]
 description = "Elegant Rust API which wraps the cargo HTTP API"
 repository = "https://github.com/foresterre/cargo-api"

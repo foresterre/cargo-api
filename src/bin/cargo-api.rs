@@ -53,6 +53,9 @@ struct ApiArgs {
 #[derive(clap::Subcommand)]
 #[command(propagate_version = true)]
 pub enum Subcommand {
+    /// Print details for a specific crate.
+    ///
+    /// Endpoint: /api/v1/crates/:name
     Crate(CrateOpts),
 }
 
