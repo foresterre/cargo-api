@@ -1,5 +1,6 @@
 use crate::api::ApiError::HttpRequest;
 use crate::api::{ApiError, Client};
+use crate::client::Token;
 use bytes::Bytes;
 use http::request::Builder;
 use reqwest::ResponseBuilderExt;
@@ -13,6 +14,7 @@ pub struct ReqwestClient {
     // Doesn't include the version and beyond.
     // A full path would be: https://crates.io/api/v1/crates/cargo-api
     url: Url,
+    token: Option<Token>,
 }
 
 impl ReqwestClient {
@@ -23,7 +25,14 @@ impl ReqwestClient {
                 .build()
                 .unwrap(),
             url: Url::parse(CRATES_API).unwrap(),
+            token: None,
         }
+    }
+
+    /// API token for endpoints which require authentication.
+    pub fn with_token(mut self, token: Token) -> Self {
+        self.token = Some(token);
+        self
     }
 
     fn send_request(
@@ -52,6 +61,14 @@ impl Client for ReqwestClient {
             url: Cow::Borrowed(CRATES_API),
             path: Cow::Owned(path.to_string()),
         })
+    }
+
+    fn authorize(&self, request_builder: Builder) -> Result<Builder, ApiError<Self::Error>> {
+        match &self.token {
+            Some(token) => Ok(request_builder
+                .header(http::header::AUTHORIZATION, token.as_header_value().clone())),
+            None => Err(ApiError::MissingToken),
+        }
     }
 
     fn send(
