@@ -23,6 +23,50 @@ impl<'a> Endpoint for Owners<'a> {
     }
 }
 
+/// API to list the users which own a crate.
+#[derive(Clone, Debug)]
+pub struct UserOwners<'a> {
+    name: Cow<'a, str>,
+}
+
+impl<'a> UserOwners<'a> {
+    pub fn new(name: Cow<'a, str>) -> Self {
+        Self { name }
+    }
+}
+
+impl<'a> Endpoint for UserOwners<'a> {
+    fn method(&self) -> http::Method {
+        http::Method::GET
+    }
+
+    fn endpoint(&self) -> Cow<'static, str> {
+        Cow::Owned(format!("v1/crates/{}/owner_user", self.name))
+    }
+}
+
+/// API to list the teams which own a crate.
+#[derive(Clone, Debug)]
+pub struct TeamOwners<'a> {
+    name: Cow<'a, str>,
+}
+
+impl<'a> TeamOwners<'a> {
+    pub fn new(name: Cow<'a, str>) -> Self {
+        Self { name }
+    }
+}
+
+impl<'a> Endpoint for TeamOwners<'a> {
+    fn method(&self) -> http::Method {
+        http::Method::GET
+    }
+
+    fn endpoint(&self) -> Cow<'static, str> {
+        Cow::Owned(format!("v1/crates/{}/owner_team", self.name))
+    }
+}
+
 /// API to invites users or teams to become (co-)owners of a crate.
 ///
 /// Owners are given by their Cargo login, e.g. `username`, `github:username`, or `github:org:team`.

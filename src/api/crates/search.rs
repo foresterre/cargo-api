@@ -93,14 +93,8 @@ impl<'a> Endpoint for Search<'a> {
         if let Some(filter) = &self.filter {
             filter.push_to(&mut params);
         }
-        match &self.pagination {
-            Some(Pagination::Page(page)) => {
-                params.push("page", page.to_string());
-            }
-            Some(Pagination::Seek(seek)) => {
-                params.push("seek", seek.to_string());
-            }
-            None => {}
+        if let Some(pagination) = &self.pagination {
+            pagination.push_query_params(&mut params);
         }
         if let Some(per_page) = self.per_page {
             params.push("per_page", per_page.to_string());
@@ -233,6 +227,19 @@ pub enum Pagination<'a> {
     Page(NonZeroU32),
     /// The seek key from the `meta.next_page` or `meta.prev_page` field of a previous response.
     Seek(Cow<'a, str>),
+}
+
+impl<'a> Pagination<'a> {
+    pub(crate) fn push_query_params(&self, params: &mut QueryParams) {
+        match self {
+            Pagination::Page(page) => {
+                params.push("page", page.to_string());
+            }
+            Pagination::Seek(seek) => {
+                params.push("seek", seek.to_string());
+            }
+        }
+    }
 }
 
 #[cfg(test)]
