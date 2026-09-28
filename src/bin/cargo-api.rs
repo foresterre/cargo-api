@@ -1,7 +1,10 @@
 use anyhow::Context;
+#[cfg(feature = "deprecated")]
+use cargo_api::api::crates::Authors;
 use cargo_api::api::crates::{
-    AddOwners, Crate, Download, Owners, Pagination, Publish, PublishMetadata, RemoveOwners, Search,
-    Sort, Unyank, Yank,
+    AddOwners, Crate, CrateDownloads, CrateVersion, Date, Download, Owners, Pagination, Publish,
+    PublishMetadata, Readme, RemoveOwners, ReverseDependencies, Search, Sort, TeamOwners, Unyank,
+    UserOwners, VersionDependencies, VersionDownloads, VersionSort, Versions, Yank,
 };
 use cargo_api::api::{Json, Query};
 use cargo_api::client::{ReqwestClient, Token};
@@ -28,6 +31,12 @@ fn main() -> anyhow::Result<()> {
         Subcommand::Owner(OwnerCommand::List(opts)) => {
             Json::new(Owners::new(Cow::Borrowed(opts.name.as_str()))).query(&client)?
         }
+        Subcommand::Owner(OwnerCommand::Users(opts)) => {
+            Json::new(UserOwners::new(Cow::Borrowed(opts.name.as_str()))).query(&client)?
+        }
+        Subcommand::Owner(OwnerCommand::Teams(opts)) => {
+            Json::new(TeamOwners::new(Cow::Borrowed(opts.name.as_str()))).query(&client)?
+        }
         Subcommand::Owner(OwnerCommand::Add(opts)) => {
             Json::new(AddOwners::new(opts.name(), opts.owners())).query(&client)?
         }
@@ -42,6 +51,23 @@ fn main() -> anyhow::Result<()> {
         }
         Subcommand::Download(opts) => {
             Json::new(Download::new(opts.name(), opts.version())).query(&client)?
+        }
+        Subcommand::Versions(opts) => Json::new(opts.endpoint()).query(&client)?,
+        Subcommand::Version(opts) => {
+            Json::new(CrateVersion::new(opts.name(), opts.version())).query(&client)?
+        }
+        Subcommand::Dependencies(opts) => {
+            Json::new(VersionDependencies::new(opts.name(), opts.version())).query(&client)?
+        }
+        Subcommand::ReverseDependencies(opts) => Json::new(opts.endpoint()).query(&client)?,
+        Subcommand::Downloads(opts) => Json::new(opts.endpoint()).query(&client)?,
+        Subcommand::VersionDownloads(opts) => Json::new(opts.endpoint()).query(&client)?,
+        Subcommand::Readme(opts) => {
+            Json::new(Readme::new(opts.name(), opts.version())).query(&client)?
+        }
+        #[cfg(feature = "deprecated")]
+        Subcommand::Authors(opts) => {
+            Json::new(Authors::new(opts.name(), opts.version())).query(&client)?
         }
     };
 
@@ -118,6 +144,41 @@ pub enum Subcommand {
     ///
     /// Endpoint: /api/v1/crates/:name/:version/download
     Download(VersionOpts),
+    /// Print the published versions of a crate.
+    ///
+    /// Endpoint: /api/v1/crates/:name/versions
+    Versions(VersionsOpts),
+    /// Print info of a specific crate version.
+    ///
+    /// Endpoint: /api/v1/crates/:name/:version
+    Version(VersionOpts),
+    /// Print the dependencies of a crate version.
+    ///
+    /// Endpoint: /api/v1/crates/:name/:version/dependencies
+    Dependencies(VersionOpts),
+    /// Print the reverse deps of a crate.
+    ///
+    /// Endpoint: /api/v1/crates/:name/reverse_dependencies
+    ReverseDependencies(ReverseDependenciesOpts),
+    /// Print the download counts of a crate.
+    ///
+    /// Endpoint: /api/v1/crates/:name/downloads
+    Downloads(DownloadsOpts),
+    /// Print the download counts of a crate version.
+    ///
+    /// Endpoint: /api/v1/crates/:name/:version/downloads
+    VersionDownloads(VersionDownloadsOpts),
+    /// Print the README URL of a crate version.
+    ///
+    /// Endpoint: /api/v1/crates/:name/:version/readme
+    Readme(VersionOpts),
+    /// Print the authors of a crate version. Deprecated, always empty.
+    ///
+    /// Requires the `deprecated` feature.
+    ///
+    /// Endpoint: /api/v1/crates/:name/:version/authors
+    #[cfg(feature = "deprecated")]
+    Authors(VersionOpts),
 }
 
 #[derive(Debug, Args)]
@@ -206,6 +267,14 @@ impl PublishOpts {
 pub enum OwnerCommand {
     /// List the owners of a crate.
     List(CrateOpts),
+    /// List the users which own a crate.
+    ///
+    /// Endpoint: /api/v1/crates/:name/owner_user
+    Users(CrateOpts),
+    /// List the teams which own a crate.
+    ///
+    /// Endpoint: /api/v1/crates/:name/owner_team
+    Teams(CrateOpts),
     /// Invite users or teams to become owners of a crate. Requires an API token.
     Add(OwnersOpts),
     /// Remove users or teams as owners of a crate. Requires an API token.
@@ -254,6 +323,114 @@ impl VersionOpts {
 
     fn version(&self) -> Cow<'_, semver::Version> {
         Cow::Borrowed(&self.crate_version)
+    }
+}
+
+#[derive(Debug, Args)]
+#[command(next_help_heading = "Versions options")]
+pub struct VersionsOpts {
+    #[arg(value_name = "name")]
+    name: String,
+
+    /// One of: date, or semver.
+    #[arg(long)]
+    sort: Option<VersionSort>,
+
+    #[arg(long)]
+    page: Option<NonZeroU32>,
+
+    #[arg(long)]
+    per_page: Option<NonZeroU32>,
+}
+
+impl VersionsOpts {
+    fn endpoint(&self) -> Versions<'_> {
+        let mut versions = Versions::new(Cow::Borrowed(self.name.as_str()));
+
+        if let Some(sort) = self.sort {
+            versions = versions.with_sort(sort);
+        }
+        if let Some(page) = self.page {
+            versions = versions.with_pagination(Pagination::Page(page));
+        }
+        if let Some(per_page) = self.per_page {
+            versions = versions.with_per_page(per_page);
+        }
+
+        versions
+    }
+}
+
+#[derive(Debug, Args)]
+#[command(next_help_heading = "Reverse dependencies options")]
+pub struct ReverseDependenciesOpts {
+    #[arg(value_name = "name")]
+    name: String,
+
+    #[arg(long)]
+    page: Option<NonZeroU32>,
+
+    #[arg(long)]
+    per_page: Option<NonZeroU32>,
+}
+
+impl ReverseDependenciesOpts {
+    fn endpoint(&self) -> ReverseDependencies<'_> {
+        let mut reverse_dependencies = ReverseDependencies::new(Cow::Borrowed(self.name.as_str()));
+
+        if let Some(page) = self.page {
+            reverse_dependencies = reverse_dependencies.with_pagination(Pagination::Page(page));
+        }
+        if let Some(per_page) = self.per_page {
+            reverse_dependencies = reverse_dependencies.with_per_page(per_page);
+        }
+
+        reverse_dependencies
+    }
+}
+
+#[derive(Debug, Args)]
+#[command(next_help_heading = "Downloads options")]
+pub struct DownloadsOpts {
+    #[arg(value_name = "name")]
+    name: String,
+
+    /// Include the metadata of the versions.
+    #[arg(long)]
+    include_versions: bool,
+}
+
+impl DownloadsOpts {
+    fn endpoint(&self) -> CrateDownloads<'_> {
+        let downloads = CrateDownloads::new(Cow::Borrowed(self.name.as_str()));
+
+        if self.include_versions {
+            downloads.with_versions()
+        } else {
+            downloads
+        }
+    }
+}
+
+#[derive(Debug, Args)]
+#[command(next_help_heading = "Version downloads options")]
+pub struct VersionDownloadsOpts {
+    #[command(flatten)]
+    version: VersionOpts,
+
+    /// Only count downloads before this date (YYYY-MM-DD).
+    #[arg(long)]
+    before_date: Option<Date>,
+}
+
+impl VersionDownloadsOpts {
+    fn endpoint(&self) -> VersionDownloads<'_> {
+        let downloads = VersionDownloads::new(self.version.name(), self.version.version());
+
+        match self.before_date {
+            Some(before_date) => downloads.with_before_date(before_date),
+            None => downloads,
+        }
     }
 }
 

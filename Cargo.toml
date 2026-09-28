@@ -1,6 +1,6 @@
 [package]
 name = "cargo-api"
-version = "0.1.1"
+version = "0.2.0"
 authors = ["Martijn Gribnau <garm@ilumeo.com>"]
 description = "Elegant Rust API which wraps the cargo HTTP API"
 repository = "https://github.com/foresterre/cargo-api"
@@ -22,6 +22,10 @@ url = "2"
 reqwest = { version = "0.13.5", features = ["blocking"] }
 semver = { version = "1.0.23", features = ["serde"] }
 bytes = "1"
+
+[features]
+# Endpoints deprecated by crates.io
+deprecated = []
 
 [dev-dependencies]
 yare = "3"
