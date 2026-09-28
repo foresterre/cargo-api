@@ -23,5 +23,9 @@ reqwest = { version = "0.13.5", features = ["blocking"] }
 semver = { version = "1.0.23", features = ["serde"] }
 bytes = "1"
 
+[features]
+# Endpoints deprecated by crates.io
+deprecated = []
+
 [dev-dependencies]
 yare = "3"
