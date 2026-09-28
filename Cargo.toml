@@ -10,17 +10,18 @@ license = "MIT OR Apache-2.0"
 [dependencies]
 # bin
 anyhow = "1.0.86"
-clap = "4.5.16"
-clap-cargo = "0.14.1"
-storyteller = "1"
-reqwest = { version = "0.12.7", features = ["blocking"] }
+clap = { version = "4.6.7", features = ["env"] }
+clap-cargo = "0.19.0"
 
 # lib
-thiserror = "1.0.63"
+thiserror = "2.0.21"
 serde = { version = "1.0.209", features = ["derive"] }
 serde_json = "1.0.127"
 http = "1"
 url = "2"
+reqwest = { version = "0.13.5", features = ["blocking"] }
 semver = { version = "1.0.23", features = ["serde"] }
-jiff = { version = "0.1.11", features = ["serde"] }
 bytes = "1"
+
+[dev-dependencies]
+yare = "3"
