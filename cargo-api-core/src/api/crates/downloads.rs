@@ -173,7 +173,9 @@ pub enum InvalidDate {
 
 impl InvalidDate {
     fn format(value: impl ToString) -> Self {
-        Self::Format {value: value.to_string()}
+        Self::Format {
+            value: value.to_string(),
+        }
     }
 }
 
