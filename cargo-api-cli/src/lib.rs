@@ -1,19 +1,19 @@
 use anyhow::Context;
 #[cfg(feature = "deprecated")]
-use cargo_api::api::crates::Authors;
-use cargo_api::api::crates::{
+use cargo_api_core::api::crates::Authors;
+use cargo_api_core::api::crates::{
     AddOwners, Crate, CrateDownloads, CrateVersion, Date, Download, Owners, Pagination, Publish,
     PublishMetadata, Readme, RemoveOwners, ReverseDependencies, Search, Sort, TeamOwners, Unyank,
     UserOwners, VersionDependencies, VersionDownloads, VersionSort, Versions, Yank,
 };
-use cargo_api::api::{Json, Query};
-use cargo_api::client::{ReqwestClient, Token};
+use cargo_api_core::api::{Json, Query};
+use cargo_api_core::client::{ReqwestClient, Token};
 use clap::{Args, Parser};
 use std::borrow::Cow;
 use std::num::NonZeroU32;
 use std::path::PathBuf;
 
-fn main() -> anyhow::Result<()> {
+pub fn run() -> anyhow::Result<()> {
     let CargoCli::Api(args) = CargoCli::parse();
 
     let mut client = ReqwestClient::new(args.user_agent.as_str());

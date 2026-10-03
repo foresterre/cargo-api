@@ -1,0 +1,20 @@
+[package]
+name = "cargo-api-cli"
+description = "The `cargo api` CLI"
+version.workspace = true
+authors.workspace = true
+repository.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+cargo-api-core.workspace = true
+anyhow.workspace = true
+clap = { version = "4.6.7", features = ["env"] }
+clap-cargo = "0.19.0"
+semver.workspace = true
+serde_json.workspace = true
+
+[features]
+# Endpoints deprecated by crates.io
+deprecated = ["cargo-api-core/deprecated"]

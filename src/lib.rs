@@ -1,2 +1,1 @@
-pub mod api;
-pub mod client;
+pub use cargo_api_core::{api, client};
