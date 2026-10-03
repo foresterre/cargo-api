@@ -43,3 +43,5 @@ default = ["cli"]
 cli = ["dep:cargo-api-cli", "dep:anyhow"]
 # Endpoints deprecated by crates.io
 deprecated = ["cargo-api-core/deprecated", "cargo-api-cli?/deprecated"]
+# Async client
+async = ["cargo-api-core/async"]

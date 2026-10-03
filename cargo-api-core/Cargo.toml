@@ -20,6 +20,9 @@ bytes = "1"
 [features]
 # Endpoints deprecated by crates.io
 deprecated = []
+# Async client and queries, for use with the tokio runtime
+async = []
 
 [dev-dependencies]
+tokio = { version = "1.53.1", features = ["macros", "rt"] }
 yare = "3"
