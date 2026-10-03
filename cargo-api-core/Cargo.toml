@@ -1,6 +1,6 @@
 [package]
 name = "cargo-api-core"
-description = "Elegant Rust API which wraps the cargo HTTP API, without the CLI"
+description = "HTTP client library for crates.io's API"
 version.workspace = true
 authors.workspace = true
 repository.workspace = true

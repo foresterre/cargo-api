@@ -1,6 +1,6 @@
 [package]
 name = "cargo-api-cli"
-description = "The `cargo api` CLI, which wraps the cargo HTTP API"
+description = "The `cargo api` CLI"
 version.workspace = true
 authors.workspace = true
 repository.workspace = true
