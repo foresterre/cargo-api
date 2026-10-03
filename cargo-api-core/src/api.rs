@@ -159,13 +159,7 @@ pub trait Endpoint {
     }
 }
 
-/// Http api trait for cargo-api.
-///
-/// # Credits
-///
-/// Inspired by Ben Boeckel's blog [post](https://plume.benboeckel.net/~/JustAnotherBlog/designing-rust-bindings-for-rest-ap-is)
-/// titled "Designing Rust bindings for REST APIs".
-pub trait Client {
+pub trait RestClient {
     type Error: std::error::Error + Send + Sync + 'static;
 
     fn base_endpoint(&self, path: &str) -> Result<Url, ApiError<Self::Error>>;
@@ -177,7 +171,15 @@ pub trait Client {
         &self,
         request_builder: http::request::Builder,
     ) -> Result<http::request::Builder, ApiError<Self::Error>>;
+}
 
+/// Http api trait for cargo-api.
+///
+/// # Credits
+///
+/// Inspired by Ben Boeckel's blog [post](https://plume.benboeckel.net/~/JustAnotherBlog/designing-rust-bindings-for-rest-ap-is)
+/// titled "Designing Rust bindings for REST APIs".
+pub trait Client: RestClient {
     // By separating the request builder and the body, additional items may be added
     // to the request, such as authentication.
     fn send(
@@ -185,6 +187,15 @@ pub trait Client {
         request_builder: http::request::Builder,
         body: Vec<u8>,
     ) -> Result<http::Response<Bytes>, ApiError<Self::Error>>;
+}
+
+#[cfg(feature = "async")]
+pub trait AsyncClient: RestClient + Sync {
+    fn send_async(
+        &self,
+        request_builder: http::request::Builder,
+        body: Vec<u8>,
+    ) -> impl std::future::Future<Output = Result<http::Response<Bytes>, ApiError<Self::Error>>> + Send;
 }
 
 /// Query trait for 'cargo-api'
@@ -195,6 +206,14 @@ pub trait Client {
 /// titled "Designing Rust bindings for REST APIs".
 pub trait Query<T, C: Client> {
     fn query(&self, client: &C) -> Result<T, ApiError<C::Error>>;
+}
+
+#[cfg(feature = "async")]
+pub trait AsyncQuery<T, C: AsyncClient> {
+    fn query_async(
+        &self,
+        client: &C,
+    ) -> impl std::future::Future<Output = Result<T, ApiError<C::Error>>> + Send;
 }
 
 impl<E> Endpoint for &E
@@ -229,46 +248,81 @@ where
     C: Client,
 {
     fn query(&self, client: &C) -> Result<T, ApiError<C::Error>> {
-        // -- compute the URL
-        // this is the base url with the path, but excluding any query parameters
-        let mut url = client.base_endpoint(self.endpoint().as_ref())?;
-        // add query parameters to the url
-        self.parameters().append_to_url(&mut url);
-
-        // -- build the request
-        let body = self.body()?;
-        // responses are always parsed as JSON, and some endpoints (e.g. download) only
-        // respond with JSON when it is explicitly asked for
-        let mut request = http::Request::builder()
-            .method(self.method())
-            .uri(url.as_ref())
-            .header(http::header::ACCEPT, "application/json");
-
-        if let Some(body) = &body {
-            request = request.header(http::header::CONTENT_TYPE, body.content_type());
-        }
-
-        let request = match self.authentication() {
-            Authentication::None => request,
-            Authentication::Required => client.authorize(request)?,
-        };
-
-        // -- send
-        let body = body.map(Body::into_bytes).unwrap_or_default();
+        let (request, body) = build_request(self, client)?;
         let response = client.send(request, body)?;
 
-        // -- handle response errors
-        if !response.status().is_success() {
-            // request failed, can be any non-2xx for now
-            return Err(ApiError::HttpResponse {
-                status_code: response.status(),
-                body: serde_json::from_slice(response.body()).into(),
-            });
-        }
-
-        // -- parse type
-        serde_json::from_slice::<T>(response.body()).map_err(ApiError::parse_type_error::<T>)
+        parse_response(response)
     }
+}
+
+#[cfg(feature = "async")]
+impl<E, T, C> AsyncQuery<T, C> for E
+where
+    E: Endpoint + Sync,
+    T: serde::de::DeserializeOwned,
+    C: AsyncClient,
+{
+    async fn query_async(&self, client: &C) -> Result<T, ApiError<C::Error>> {
+        let (request, body) = build_request(self, client)?;
+        let response = client.send_async(request, body).await?;
+
+        parse_response(response)
+    }
+}
+
+fn build_request<E, C>(
+    endpoint: &E,
+    client: &C,
+) -> Result<(http::request::Builder, Vec<u8>), ApiError<C::Error>>
+where
+    E: Endpoint,
+    C: RestClient,
+{
+    // -- compute the URL
+    // this is the base url with the path, but excluding any query parameters
+    let mut url = client.base_endpoint(endpoint.endpoint().as_ref())?;
+    // add query parameters to the url
+    endpoint.parameters().append_to_url(&mut url);
+
+    // -- build the request
+    let body = endpoint.body()?;
+    // responses are always parsed as JSON, and some endpoints (e.g. download) only
+    // respond with JSON when it is explicitly asked for
+    let mut request = http::Request::builder()
+        .method(endpoint.method())
+        .uri(url.as_ref())
+        .header(http::header::ACCEPT, "application/json");
+
+    if let Some(body) = &body {
+        request = request.header(http::header::CONTENT_TYPE, body.content_type());
+    }
+
+    let request = match endpoint.authentication() {
+        Authentication::None => request,
+        Authentication::Required => client.authorize(request)?,
+    };
+
+    let body = body.map(Body::into_bytes).unwrap_or_default();
+
+    Ok((request, body))
+}
+
+fn parse_response<T, CE>(response: http::Response<Bytes>) -> Result<T, ApiError<CE>>
+where
+    T: serde::de::DeserializeOwned,
+    CE: std::error::Error + Send + Sync + 'static,
+{
+    // -- handle response errors
+    if !response.status().is_success() {
+        // request failed, can be any non-2xx for now
+        return Err(ApiError::HttpResponse {
+            status_code: response.status(),
+            body: serde_json::from_slice(response.body()).into(),
+        });
+    }
+
+    // -- parse type
+    serde_json::from_slice::<T>(response.body()).map_err(ApiError::parse_type_error::<T>)
 }
 
 pub struct Json<E> {
@@ -291,11 +345,22 @@ where
     }
 }
 
+#[cfg(feature = "async")]
+impl<E, C> AsyncQuery<serde_json::Value, C> for Json<E>
+where
+    E: Endpoint + Sync,
+    C: AsyncClient,
+{
+    async fn query_async(&self, client: &C) -> Result<serde_json::Value, ApiError<C::Error>> {
+        self.endpoint.query_async(client).await
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::api::crates::{AddOwners, Crate, Yank};
-    use std::cell::RefCell;
+    use std::sync::Mutex;
 
     #[derive(fmt::Debug, thiserror::Error)]
     #[error("fake client error")]
@@ -306,7 +371,7 @@ mod tests {
         token: Option<&'static str>,
         status: StatusCode,
         response: &'static str,
-        sent: RefCell<Option<http::Request<Vec<u8>>>>,
+        sent: Mutex<Option<http::Request<Vec<u8>>>>,
     }
 
     impl FakeClient {
@@ -315,16 +380,38 @@ mod tests {
                 token,
                 status: StatusCode::OK,
                 response: r#"{"ok":true}"#,
-                sent: RefCell::new(None),
+                sent: Mutex::new(None),
             }
         }
 
         fn sent(&self) -> http::Request<Vec<u8>> {
-            self.sent.take().expect("expected a request to be sent")
+            self.sent
+                .lock()
+                .unwrap()
+                .take()
+                .expect("expected a request to be sent")
+        }
+
+        fn has_sent(&self) -> bool {
+            self.sent.lock().unwrap().is_some()
+        }
+
+        fn respond(
+            &self,
+            request_builder: http::request::Builder,
+            body: Vec<u8>,
+        ) -> http::Response<Bytes> {
+            let request = request_builder.body(body).unwrap();
+            self.sent.lock().unwrap().replace(request);
+
+            http::Response::builder()
+                .status(self.status)
+                .body(Bytes::from_static(self.response.as_bytes()))
+                .unwrap()
         }
     }
 
-    impl Client for FakeClient {
+    impl RestClient for FakeClient {
         type Error = FakeError;
 
         fn base_endpoint(&self, path: &str) -> Result<Url, ApiError<Self::Error>> {
@@ -343,19 +430,26 @@ mod tests {
                 None => Err(ApiError::MissingToken),
             }
         }
+    }
 
+    impl Client for FakeClient {
         fn send(
             &self,
             request_builder: http::request::Builder,
             body: Vec<u8>,
         ) -> Result<http::Response<Bytes>, ApiError<Self::Error>> {
-            let request = request_builder.body(body).unwrap();
-            self.sent.replace(Some(request));
+            Ok(self.respond(request_builder, body))
+        }
+    }
 
-            Ok(http::Response::builder()
-                .status(self.status)
-                .body(Bytes::from_static(self.response.as_bytes()))
-                .unwrap())
+    #[cfg(feature = "async")]
+    impl AsyncClient for FakeClient {
+        async fn send_async(
+            &self,
+            request_builder: http::request::Builder,
+            body: Vec<u8>,
+        ) -> Result<http::Response<Bytes>, ApiError<Self::Error>> {
+            Ok(self.respond(request_builder, body))
         }
     }
 
@@ -397,7 +491,7 @@ mod tests {
         let result: Result<serde_json::Value, _> = yank().query(&client);
 
         assert!(matches!(result, Err(ApiError::MissingToken)));
-        assert!(client.sent.borrow().is_none());
+        assert!(!client.has_sent());
     }
 
     #[test]
@@ -448,6 +542,86 @@ mod tests {
                 assert_eq!(body["errors"][0]["detail"], "must be logged in");
             }
             other => panic!("expected an HTTP response error, got {:?}", other),
+        }
+    }
+
+    #[cfg(feature = "async")]
+    mod r#async {
+        use super::*;
+
+        #[tokio::test]
+        async fn asks_for_json_without_authentication() {
+            let client = FakeClient::new(Some("token"));
+
+            let _: serde_json::Value = Crate::new("serde".into())
+                .query_async(&client)
+                .await
+                .unwrap();
+
+            let request = client.sent();
+            assert_eq!(request.method(), http::Method::GET);
+            assert_eq!(request.uri(), "https://crates.test/api/v1/crates/serde");
+            assert_eq!(request.headers()[http::header::ACCEPT], "application/json");
+            assert!(!request.headers().contains_key(http::header::AUTHORIZATION));
+        }
+
+        #[tokio::test]
+        async fn sends_the_body_and_token() {
+            let client = FakeClient::new(Some("token"));
+            let endpoint = AddOwners::new("serde".into(), vec!["ghost".into()]);
+
+            let response = Json::new(endpoint).query_async(&client).await.unwrap();
+
+            assert_eq!(response, serde_json::json!({ "ok": true }));
+            let request = client.sent();
+            assert_eq!(request.headers()[http::header::AUTHORIZATION], "token");
+            assert_eq!(request.body(), br#"{"owners":["ghost"]}"#);
+        }
+
+        #[tokio::test]
+        async fn missing_token_is_an_error_before_sending() {
+            let client = FakeClient::new(None);
+
+            let result: Result<serde_json::Value, _> = yank().query_async(&client).await;
+
+            assert!(matches!(result, Err(ApiError::MissingToken)));
+            assert!(!client.has_sent());
+        }
+
+        #[tokio::test]
+        async fn unsuccessful_status_is_an_error() {
+            let client = FakeClient {
+                status: StatusCode::NOT_FOUND,
+                ..FakeClient::new(None)
+            };
+
+            let result: Result<serde_json::Value, _> =
+                Crate::new("serde".into()).query_async(&client).await;
+
+            assert!(matches!(
+                result,
+                Err(ApiError::HttpResponse {
+                    status_code: StatusCode::NOT_FOUND,
+                    ..
+                })
+            ));
+        }
+
+        #[tokio::test]
+        async fn query_is_send() {
+            let client = std::sync::Arc::new(FakeClient::new(None));
+
+            let task = tokio::spawn({
+                let client = client.clone();
+                async move {
+                    let result: Result<serde_json::Value, _> =
+                        Crate::new("serde".into()).query_async(&*client).await;
+                    result
+                }
+            });
+
+            task.await.unwrap().unwrap();
+            assert!(client.has_sent());
         }
     }
 }
