@@ -10,7 +10,7 @@ license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
 # this workspace
-cargo-api-core = { version = "0.4.0", path = "cargo-api-core" }
+cargo-api-core = { version = "0.4.0", path = "cargo-api-core", default-features = false }
 cargo-api-cli = { version = "0.4.0", path = "cargo-api-cli" }
 
 # external
@@ -38,8 +38,12 @@ cargo-api-cli = { workspace = true, optional = true }
 anyhow = { workspace = true, optional = true }
 
 [features]
-default = ["cli"]
+default = ["cli", "blocking_reqwest"]
 # The `cargo api` binary
 cli = ["dep:cargo-api-cli", "dep:anyhow"]
 # Endpoints deprecated by crates.io
 deprecated = ["cargo-api-core/deprecated", "cargo-api-cli?/deprecated"]
+# Blocking client, using reqwest
+blocking_reqwest = ["cargo-api-core/blocking_reqwest"]
+# Async client, using reqwest
+async_reqwest = ["cargo-api-core/async_reqwest"]
