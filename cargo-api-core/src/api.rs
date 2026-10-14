@@ -4,6 +4,7 @@ use bytes::Bytes;
 use http::StatusCode;
 use std::borrow::Cow;
 use std::fmt;
+use std::future::Future;
 use url::Url;
 
 // A list rather than a map, because some parameters (e.g. `ids[]`) may be repeated.
@@ -23,6 +24,10 @@ impl QueryParams {
     }
 
     pub fn append_to_url(&self, url: &mut Url) {
+        if self.inner.is_empty() {
+            return;
+        }
+
         url.query_pairs_mut().extend_pairs(self.iter_tuples());
     }
 
@@ -135,6 +140,17 @@ impl<C: std::error::Error + Send + Sync + 'static> ApiError<C> {
     }
 }
 
+#[derive(Clone, Copy, fmt::Debug, PartialEq, Eq, thiserror::Error)]
+#[error("Missing required API token")]
+#[non_exhaustive]
+pub struct MissingToken;
+
+impl<C: std::error::Error + Send + Sync + 'static> From<MissingToken> for ApiError<C> {
+    fn from(_: MissingToken) -> Self {
+        ApiError::MissingToken
+    }
+}
+
 /// Http endpoint trait for cargo-api.
 ///
 /// # Credits
@@ -159,18 +175,16 @@ pub trait Endpoint {
     }
 }
 
-pub trait RestClient {
-    type Error: std::error::Error + Send + Sync + 'static;
-
-    fn base_endpoint(&self, path: &str) -> Result<Url, ApiError<Self::Error>>;
+pub trait Connection {
+    fn base_url(&self) -> &Url;
 
     /// Adds the API token to a request of an endpoint which requires authentication.
     ///
-    /// Returns [`ApiError::MissingToken`] when the client has no API token.
+    /// Returns [`MissingToken`] when the connection has no API token.
     fn authorize(
         &self,
         request_builder: http::request::Builder,
-    ) -> Result<http::request::Builder, ApiError<Self::Error>>;
+    ) -> Result<http::request::Builder, MissingToken>;
 }
 
 /// Http api trait for cargo-api.
@@ -179,7 +193,9 @@ pub trait RestClient {
 ///
 /// Inspired by Ben Boeckel's blog [post](https://plume.benboeckel.net/~/JustAnotherBlog/designing-rust-bindings-for-rest-ap-is)
 /// titled "Designing Rust bindings for REST APIs".
-pub trait Client: RestClient {
+pub trait Client: Connection {
+    type Error: std::error::Error + Send + Sync + 'static;
+
     // By separating the request builder and the body, additional items may be added
     // to the request, such as authentication.
     fn send(
@@ -189,13 +205,14 @@ pub trait Client: RestClient {
     ) -> Result<http::Response<Bytes>, ApiError<Self::Error>>;
 }
 
-#[cfg(feature = "async")]
-pub trait AsyncClient: RestClient + Sync {
+pub trait AsyncClient: Connection {
+    type Error: std::error::Error + Send + Sync + 'static;
+
     fn send_async(
         &self,
         request_builder: http::request::Builder,
         body: Vec<u8>,
-    ) -> impl std::future::Future<Output = Result<http::Response<Bytes>, ApiError<Self::Error>>> + Send;
+    ) -> impl Future<Output = Result<http::Response<Bytes>, ApiError<Self::Error>>> + Send;
 }
 
 /// Query trait for 'cargo-api'
@@ -208,12 +225,9 @@ pub trait Query<T, C: Client> {
     fn query(&self, client: &C) -> Result<T, ApiError<C::Error>>;
 }
 
-#[cfg(feature = "async")]
 pub trait AsyncQuery<T, C: AsyncClient> {
-    fn query_async(
-        &self,
-        client: &C,
-    ) -> impl std::future::Future<Output = Result<T, ApiError<C::Error>>> + Send;
+    fn query_async(&self, client: &C)
+        -> impl Future<Output = Result<T, ApiError<C::Error>>> + Send;
 }
 
 impl<E> Endpoint for &E
@@ -248,39 +262,45 @@ where
     C: Client,
 {
     fn query(&self, client: &C) -> Result<T, ApiError<C::Error>> {
-        let (request, body) = build_request(self, client)?;
+        let (request, body) = build_request::<C::Error, _, _>(self, client)?;
         let response = client.send(request, body)?;
 
         parse_response(response)
     }
 }
 
-#[cfg(feature = "async")]
 impl<E, T, C> AsyncQuery<T, C> for E
 where
     E: Endpoint + Sync,
     T: serde::de::DeserializeOwned,
-    C: AsyncClient,
+    C: AsyncClient + Sync,
 {
     async fn query_async(&self, client: &C) -> Result<T, ApiError<C::Error>> {
-        let (request, body) = build_request(self, client)?;
+        let (request, body) = build_request::<C::Error, _, _>(self, client)?;
         let response = client.send_async(request, body).await?;
 
         parse_response(response)
     }
 }
 
-fn build_request<E, C>(
+fn build_request<Err, E, C>(
     endpoint: &E,
-    client: &C,
-) -> Result<(http::request::Builder, Vec<u8>), ApiError<C::Error>>
+    connection: &C,
+) -> Result<(http::request::Builder, Vec<u8>), ApiError<Err>>
 where
+    Err: std::error::Error + Send + Sync + 'static,
     E: Endpoint,
-    C: RestClient,
+    C: Connection,
 {
     // -- compute the URL
     // this is the base url with the path, but excluding any query parameters
-    let mut url = client.base_endpoint(endpoint.endpoint().as_ref())?;
+    let base_url = connection.base_url();
+    let path = endpoint.endpoint();
+    let mut url = base_url.join(&path).map_err(|error| ApiError::Url {
+        error,
+        url: Cow::Owned(base_url.to_string()),
+        path,
+    })?;
     // add query parameters to the url
     endpoint.parameters().append_to_url(&mut url);
 
@@ -299,7 +319,7 @@ where
 
     let request = match endpoint.authentication() {
         Authentication::None => request,
-        Authentication::Required => client.authorize(request)?,
+        Authentication::Required => connection.authorize(request)?,
     };
 
     let body = body.map(Body::into_bytes).unwrap_or_default();
@@ -345,11 +365,10 @@ where
     }
 }
 
-#[cfg(feature = "async")]
 impl<E, C> AsyncQuery<serde_json::Value, C> for Json<E>
 where
     E: Endpoint + Sync,
-    C: AsyncClient,
+    C: AsyncClient + Sync,
 {
     async fn query_async(&self, client: &C) -> Result<serde_json::Value, ApiError<C::Error>> {
         self.endpoint.query_async(client).await
@@ -368,6 +387,7 @@ mod tests {
 
     /// Records the request it is asked to send, and responds with a fixed response.
     struct FakeClient {
+        url: Url,
         token: Option<&'static str>,
         status: StatusCode,
         response: &'static str,
@@ -377,6 +397,7 @@ mod tests {
     impl FakeClient {
         fn new(token: Option<&'static str>) -> Self {
             Self {
+                url: Url::parse("https://crates.test/api/").unwrap(),
                 token,
                 status: StatusCode::OK,
                 response: r#"{"ok":true}"#,
@@ -411,28 +432,25 @@ mod tests {
         }
     }
 
-    impl RestClient for FakeClient {
-        type Error = FakeError;
-
-        fn base_endpoint(&self, path: &str) -> Result<Url, ApiError<Self::Error>> {
-            Ok(Url::parse("https://crates.test/api/")
-                .unwrap()
-                .join(path)
-                .unwrap())
+    impl Connection for FakeClient {
+        fn base_url(&self) -> &Url {
+            &self.url
         }
 
         fn authorize(
             &self,
             request_builder: http::request::Builder,
-        ) -> Result<http::request::Builder, ApiError<Self::Error>> {
+        ) -> Result<http::request::Builder, MissingToken> {
             match self.token {
                 Some(token) => Ok(request_builder.header(http::header::AUTHORIZATION, token)),
-                None => Err(ApiError::MissingToken),
+                None => Err(MissingToken),
             }
         }
     }
 
     impl Client for FakeClient {
+        type Error = FakeError;
+
         fn send(
             &self,
             request_builder: http::request::Builder,
@@ -442,8 +460,9 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "async")]
     impl AsyncClient for FakeClient {
+        type Error = FakeError;
+
         async fn send_async(
             &self,
             request_builder: http::request::Builder,
@@ -466,6 +485,7 @@ mod tests {
         let request = client.sent();
         assert_eq!(request.method(), http::Method::GET);
         assert_eq!(request.uri(), "https://crates.test/api/v1/crates/serde");
+        assert_eq!(request.uri().query(), None);
         assert_eq!(request.headers()[http::header::ACCEPT], "application/json");
         assert!(!request.headers().contains_key(http::header::AUTHORIZATION));
         assert!(!request.headers().contains_key(http::header::CONTENT_TYPE));
@@ -545,7 +565,6 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "async")]
     mod r#async {
         use super::*;
 

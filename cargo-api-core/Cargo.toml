@@ -13,16 +13,28 @@ serde = { version = "1.0.209", features = ["derive"] }
 serde_json.workspace = true
 http = "1"
 url = "2"
-reqwest = { version = "0.13.5", features = ["blocking"] }
+reqwest = { version = "0.13.5", optional = true }
 semver = { workspace = true, features = ["serde"] }
 bytes = "1"
 
 [features]
+default = ["blocking_reqwest"]
 # Endpoints deprecated by crates.io
 deprecated = []
-# Async client and queries, for use with the tokio runtime
-async = []
+# Blocking client, using reqwest
+blocking_reqwest = ["dep:reqwest", "reqwest/blocking"]
+# Async client, using reqwest (for use with the tokio runtime)
+async_reqwest = ["dep:reqwest"]
 
 [dev-dependencies]
+mockito = "1.7.2"
 tokio = { version = "1.53.1", features = ["macros", "rt"] }
 yare = "3"
+
+[[test]]
+name = "blocking_api"
+required-features = ["blocking_reqwest"]
+
+[[test]]
+name = "async_api"
+required-features = ["async_reqwest"]

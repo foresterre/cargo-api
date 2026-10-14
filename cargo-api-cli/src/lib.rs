@@ -7,7 +7,7 @@ use cargo_api_core::api::crates::{
     UserOwners, VersionDependencies, VersionDownloads, VersionSort, Versions, Yank,
 };
 use cargo_api_core::api::{Json, Query};
-use cargo_api_core::client::{ReqwestClient, Token};
+use cargo_api_core::client::{CratesIoConnection, ReqwestClient, Token};
 use clap::{Args, Parser};
 use std::borrow::Cow;
 use std::num::NonZeroU32;
@@ -16,11 +16,13 @@ use std::path::PathBuf;
 pub fn run() -> anyhow::Result<()> {
     let CargoCli::Api(args) = CargoCli::parse();
 
-    let mut client = ReqwestClient::new(args.user_agent.as_str());
+    let mut connection = CratesIoConnection::default();
 
     if let Some(token) = args.token.as_deref() {
-        client = client.with_token(Token::new(token)?);
+        connection = connection.with_token(Token::new(token)?);
     }
+
+    let client = ReqwestClient::new(connection, args.user_agent.as_str())?;
 
     let value = match args.subcommand {
         Subcommand::Crate(opts) => {
