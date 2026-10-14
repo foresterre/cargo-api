@@ -1,5 +1,14 @@
 # cargo-api
 
+## Add as library
+
+With any recent cargo version: `cargo add cargo-api`
+
+## Install the CLI
+
+From crates.io: `cargo install --features cli cargo-api`<br>
+From git: `cargo install --git "https://github.com/foresterre/cargo-api.git" --features cli cargo-api`
+
 ## Usage (library)
 
 See [docs.rs/cargo-api](https://docs.rs/cargo-api/)
