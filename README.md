@@ -1,5 +1,7 @@
 # cargo-api
 
+Rust crate (library) and CLI for [crates.io](Wrapper for https://doc.rust-lang.org/cargo/reference/registries.html?highlight=api#web-api) Web API.
+
 ## Add as library
 
 With any recent cargo version: `cargo add cargo-api`
